@@ -1,7 +1,10 @@
 const $ = s => document.querySelector(s);
-const groups = [{id:'primi',name:'Primi',count:2},{id:'secondi',name:'Secondi',count:2},{id:'burger',name:'Burger',count:1}];
+const groups = [{id:'primi',name:'Primi',count:2},{id:'secondi',name:'Secondi',count:2},{id:'burger',name:'Special',count:1}];
 const key='circolone-menu-v2', oldKey='circolone-menu-v1';
 const emptyDish=()=>({name:'',price:'',desc:''});
+// Keep the stored burger key so previously saved menus remain available.
+const hasDishContent=item=>[item.name,item.price,item.desc].some(value=>value.trim()!=='');
+const visibleDishes=id=>data.sections[id].filter(hasDishContent);
 const today=new Date(),monday=new Date(today);monday.setDate(today.getDate()-(today.getDay()+6)%7);
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const sunday=new Date(monday);sunday.setDate(monday.getDate()+6);
@@ -24,7 +27,7 @@ function renderFields(){
   heading.textContent=g.name+' ';badge.textContent=data.sections[g.id].length;heading.append(badge);section.append(heading);
   data.sections[g.id].forEach((item,i)=>{
    const card=document.createElement('div');card.className='dish';
-   card.innerHTML=`<div class="row"><label>Piatto ${i+1}<input data-group="${g.id}" data-i="${i}" data-k="name" maxlength="65" placeholder="Nome del piatto"></label><label>Prezzo €<input data-group="${g.id}" data-i="${i}" data-k="price" type="number" min="0" max="999" step="0.01" placeholder="0,00"></label></div><label class="desc">Descrizione · facoltativa${g.id==='burger'?`<textarea data-group="${g.id}" data-i="${i}" data-k="desc" maxlength="300" rows="3" placeholder="Ingredienti del burger · puoi andare a capo"></textarea><span class="hint">Fino a 300 caratteri. A capo automatico nel menu.</span>`:`<input data-group="${g.id}" data-i="${i}" data-k="desc" maxlength="110" placeholder="Ingredienti o accompagnamento">`}</label><div class="dish-actions"><button type="button" class="remove-dish" data-remove="${g.id}" data-i="${i}" aria-label="Elimina piatto ${i+1} da ${g.name}">Elimina piatto</button></div>`;
+   card.innerHTML=`<div class="row"><label>Piatto ${i+1}<input data-group="${g.id}" data-i="${i}" data-k="name" maxlength="65" placeholder="Nome del piatto"></label><label>Prezzo €<input data-group="${g.id}" data-i="${i}" data-k="price" type="number" min="0" max="999" step="0.01" placeholder="0,00"></label></div><label class="desc">Descrizione · facoltativa${g.id==='burger'?`<textarea data-group="${g.id}" data-i="${i}" data-k="desc" maxlength="300" rows="3" placeholder="Descrizione dello special · puoi andare a capo"></textarea><span class="hint">Fino a 300 caratteri. A capo automatico nel menu.</span>`:`<input data-group="${g.id}" data-i="${i}" data-k="desc" maxlength="110" placeholder="Ingredienti o accompagnamento">`}</label><div class="dish-actions"><button type="button" class="remove-dish" data-remove="${g.id}" data-i="${i}" aria-label="Elimina piatto ${i+1} da ${g.name}">Elimina piatto</button></div>`;
    card.querySelectorAll('[data-k]').forEach(el=>el.value=item[el.dataset.k]);section.append(card);
   });
   if(!data.sections[g.id].length){const p=document.createElement('p');p.className='empty-section';p.textContent='Sezione vuota: non comparirà nel PDF.';section.append(p)}
@@ -45,18 +48,42 @@ function text(s,x,y,size=36,color=palette.ink,family=fonts.body,align='left'){ct
 function layout(compact){
  const headingGap=75-15*compact,dishGap=35-23*compact,sectionGap=50-30*compact;
  let y=540;const blocks=[];
- for(const g of groups){if(!data.sections[g.id].length)continue;
+ for(const g of groups){const items=visibleDishes(g.id);if(!items.length)continue;
   blocks.push({kind:'heading',label:g.name.toUpperCase(),y});y+=headingGap;
-  for(const item of data.sections[g.id]){const titles=wrap(item.name.trim()||'Nome del piatto',1040,fontSpec(44));const descriptions=item.desc.trim()?wrap(item.desc.trim(),1220,fontSpec(34)):[];
+  for(const item of items){const titles=wrap(item.name.trim()||'Nome del piatto',1040,fontSpec(44));const descriptions=item.desc.trim()?wrap(item.desc.trim(),1220,fontSpec(34)):[];
    blocks.push({kind:'dish',item,titles,descriptions,y});y+=titles.length*52+descriptions.length*40+dishGap;
   }y+=sectionGap;
  }
  return {blocks,end:y};
 }
-function chooseLayout(){let plan;for(let step=0;step<=10;step++){plan=layout(step/10);if(plan.end<=1900)return {...plan,compact:step>0,fits:true}}return {...plan,compact:true,fits:false}}
+// Measure visible text, excluding the unused spacing after the last dish.
+function contentBounds(blocks){
+ let top=Infinity,bottom=-Infinity;
+ const include=(label,y,size,family=fonts.body)=>{
+  ctx.font=fontSpec(size,family);const metrics=ctx.measureText(label);
+  const ascent=Number.isFinite(metrics.actualBoundingBoxAscent)?metrics.actualBoundingBoxAscent:size;
+  const descent=Number.isFinite(metrics.actualBoundingBoxDescent)?metrics.actualBoundingBoxDescent:size*.2;
+  top=Math.min(top,y-ascent);bottom=Math.max(bottom,y+descent);
+ };
+ for(const block of blocks){
+  if(block.kind==='heading'){include(block.label,block.y,42,fonts.heading);top=Math.min(top,block.y-13);bottom=Math.max(bottom,block.y-11);continue}
+  let y=block.y;
+  for(const line of block.titles){include(line,y,44);y+=52}
+  if(block.item.price.trim())include('€ '+Number(block.item.price).toLocaleString('it-IT',{maximumFractionDigits:2}),block.y,44);
+  for(const line of block.descriptions){include(line,y,34);y+=40}
+ }
+ return {top,bottom};
+}
+function centerLayout(plan){
+ if(!plan.blocks.length||!plan.fits)return plan;
+ const {top,bottom}=contentBounds(plan.blocks),areaTop=500,areaBottom=1900;
+ const offset=(areaTop+areaBottom-top-bottom)/2;
+ return {...plan,blocks:plan.blocks.map(block=>({...block,y:block.y+offset})),end:plan.end+offset};
+}
+function chooseLayout(){let plan;for(let step=0;step<=10;step++){plan=layout(step/10);if(plan.end<=1900)return centerLayout({...plan,compact:step>0,fits:true})}return {...plan,compact:true,fits:false}}
 function dateValid(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T12:00:00');return Number.isFinite(d.getTime())&&iso(d)===s}
 function draw(){
- const plan=chooseLayout(),all=groups.flatMap(g=>data.sections[g.id]);
+ const plan=chooseLayout(),all=groups.flatMap(g=>visibleDishes(g.id));
  ctx.fillStyle=palette.paper;ctx.fillRect(0,0,W,H);
  if(logo.complete&&logo.naturalWidth)ctx.drawImage(logo,420,110,640,640*logo.naturalHeight/logo.naturalWidth);
  text('Menu della settimana',W/2,370,78,palette.wine,fonts.title,'center');
@@ -76,7 +103,7 @@ function draw(){
  if(fontsFailed)message='Impossibile caricare i caratteri. Verifica che la cartella fonts sia presente accanto ad app.js e ricarica la pagina.';
  else if(!fontsReady)message='Caricamento dei caratteri del menu…';
  else if(!plan.fits)message='Troppi contenuti per una pagina A5. Elimina un piatto o abbrevia le descrizioni: il PDF è bloccato per evitare tagli e testi troppo piccoli.';
- else if(!all.length)message='Aggiungi almeno un piatto per creare il menu.';
+ else if(!all.length)message='Compila almeno un piatto per creare il menu. Le categorie vuote non compariranno nel PDF.';
  else if(!goodDates)message='Seleziona le date della settimana.';
  else if(data.end<data.start)message='La data finale deve essere successiva o uguale a quella iniziale.';
  else if(!filled)message='Completa nomi e prezzi oppure elimina i piatti che non servono.';
