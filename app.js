@@ -40,18 +40,22 @@ const logo=new Image();logo.onload=draw;logo.onerror=draw;logo.src='logo.png';le
 let fontsReady=false,fontsFailed=false;
 const palette={paper:'#FFFFFF',ink:'#252626',wine:'#8D1926',cream:'#F1E3CA'};
 const fonts={title:'Retrofunk Script',heading:'Captain Casual',body:'Bebas Neue'};
+// Canvas is 1480 px wide and prints at 148 mm: convert requested print points.
+const pxPerPoint=W/(148*72/25.4);
+const printSizes={name:14*pxPerPoint,description:11*pxPerPoint,heading:16*pxPerPoint};
+const lineSteps={name:printSizes.name*1.18,description:printSizes.description*1.18};
 const fontSpec=(size,family=fonts.body)=>`normal ${size}px "${family}"`;
 Promise.all(Object.values(fonts).map(family=>document.fonts.load(fontSpec(38,family)))).then(loaded=>{if(loaded.some(faces=>!faces.length))throw new Error('Font non disponibile');fontsReady=true;draw()}).catch(()=>{fontsFailed=true;draw()});
 function wrap(s,max,font){ctx.font=font;const lines=[];for(const paragraph of s.split(/\r?\n/)){let line='';for(const word of paragraph.trim().split(/\s+/)){if(!word)continue;const next=line?line+' '+word:word;if(ctx.measureText(next).width>max&&line){lines.push(line);line=''}if(ctx.measureText(word).width>max){for(const char of word){if(ctx.measureText(line+char).width>max&&line){lines.push(line);line=''}line+=char}}else line=line?line+' '+word:word}lines.push(line)}return lines}
 function text(s,x,y,size=36,color=palette.ink,family=fonts.body,align='left'){ctx.fillStyle=color;ctx.font=fontSpec(size,family);ctx.textAlign=align;ctx.fillText(s,x,y)}
 // Text sizes stay fixed: only whitespace is compressed to fit the single A5 page.
 function layout(compact){
- const headingGap=75-15*compact,dishGap=35-23*compact,sectionGap=50-30*compact;
+ const headingGap=88-18*compact,dishGap=35-23*compact,sectionGap=50-30*compact;
  let y=540;const blocks=[];
  for(const g of groups){const items=visibleDishes(g.id);if(!items.length)continue;
   blocks.push({kind:'heading',label:g.name.toUpperCase(),y});y+=headingGap;
-  for(const item of items){const titles=wrap(item.name.trim()||'Nome del piatto',1040,fontSpec(44));const descriptions=item.desc.trim()?wrap(item.desc.trim(),1220,fontSpec(34)):[];
-   blocks.push({kind:'dish',item,titles,descriptions,y});y+=titles.length*52+descriptions.length*40+dishGap;
+  for(const item of items){const titles=wrap(item.name.trim()||'Nome del piatto',1040,fontSpec(printSizes.name));const descriptions=item.desc.trim()?wrap(item.desc.trim(),1220,fontSpec(printSizes.description)):[];
+   blocks.push({kind:'dish',item,titles,descriptions,y});y+=titles.length*lineSteps.name+descriptions.length*lineSteps.description+dishGap;
   }y+=sectionGap;
  }
  return {blocks,end:y};
@@ -66,11 +70,11 @@ function contentBounds(blocks){
   top=Math.min(top,y-ascent);bottom=Math.max(bottom,y+descent);
  };
  for(const block of blocks){
-  if(block.kind==='heading'){include(block.label,block.y,42,fonts.heading);top=Math.min(top,block.y-13);bottom=Math.max(bottom,block.y-11);continue}
+  if(block.kind==='heading'){include(block.label,block.y,printSizes.heading,fonts.heading);top=Math.min(top,block.y-19);bottom=Math.max(bottom,block.y-17);continue}
   let y=block.y;
-  for(const line of block.titles){include(line,y,44);y+=52}
+  for(const line of block.titles){include(line,y,printSizes.name);y+=lineSteps.name}
   if(block.item.price.trim())include('€ '+Number(block.item.price).toLocaleString('it-IT',{maximumFractionDigits:2}),block.y,44);
-  for(const line of block.descriptions){include(line,y,34);y+=40}
+  for(const line of block.descriptions){include(line,y,printSizes.description);y+=lineSteps.description}
  }
  return {top,bottom};
 }
@@ -91,10 +95,10 @@ function draw(){
  text(goodDates?`${fmt(data.start)} — ${fmt(data.end)}`:'Seleziona le date della settimana',W/2,437,34,palette.ink,fonts.body,'center');
  ctx.save();ctx.beginPath();ctx.rect(80,490,1320,1420);ctx.clip();
  for(const block of plan.blocks){
-  if(block.kind==='heading'){text(block.label,100,block.y,42,palette.wine,fonts.heading);const tw=ctx.measureText(block.label).width;ctx.strokeStyle=palette.wine;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(125+tw,block.y-12);ctx.lineTo(1380,block.y-12);ctx.stroke();continue}
-  let y=block.y;for(const line of block.titles){text(line,100,y,44,palette.ink);y+=52}
+  if(block.kind==='heading'){text(block.label,100,block.y,printSizes.heading,palette.wine,fonts.heading);const tw=ctx.measureText(block.label).width;ctx.strokeStyle=palette.wine;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(125+tw,block.y-18);ctx.lineTo(1380,block.y-18);ctx.stroke();continue}
+  let y=block.y;for(const line of block.titles){text(line,100,y,printSizes.name,palette.ink);y+=lineSteps.name}
   if(block.item.price!==''&&Number.isFinite(Number(block.item.price)))text('€ '+Number(block.item.price).toLocaleString('it-IT',{maximumFractionDigits:2}),1380,block.y,44,palette.wine,fonts.body,'right');
-  for(const line of block.descriptions){text(line,100,y,34,palette.ink);y+=40}
+  for(const line of block.descriptions){text(line,100,y,printSizes.description,palette.ink);y+=lineSteps.description}
  }
  ctx.restore();ctx.strokeStyle=palette.wine;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(100,1950);ctx.lineTo(1380,1950);ctx.stroke();text('Per informazioni sugli allergeni chiedi al personale.',740,2005,30,palette.ink,fonts.body,'center');
  const filled=all.every(x=>x.name.trim()&&x.price.trim()!==''&&Number.isFinite(Number(x.price))&&Number(x.price)>=0&&Number(x.price)<=999);
