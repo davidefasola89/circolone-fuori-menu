@@ -34,16 +34,21 @@ function renderFields(){
 renderFields();
 const canvas=$('#preview'),ctx=canvas.getContext('2d'),W=1480,H=2100;canvas.width=W;canvas.height=H;
 const logo=new Image();logo.onload=draw;logo.onerror=draw;logo.src='logo.png';let valid=false;
+let fontsReady=false,fontsFailed=false;
+const palette={paper:'#FFFFFF',ink:'#252626',wine:'#8D1926',cream:'#F1E3CA'};
+const fonts={title:'Retrofunk Script',heading:'Captain Casual',body:'Bebas Neue'};
+const fontSpec=(size,family=fonts.body)=>`normal ${size}px "${family}"`;
+Promise.all(Object.values(fonts).map(family=>document.fonts.load(fontSpec(38,family)))).then(loaded=>{if(loaded.some(faces=>!faces.length))throw new Error('Font non disponibile');fontsReady=true;draw()}).catch(()=>{fontsFailed=true;draw()});
 function wrap(s,max,font){ctx.font=font;const lines=[];for(const paragraph of s.split(/\r?\n/)){let line='';for(const word of paragraph.trim().split(/\s+/)){if(!word)continue;const next=line?line+' '+word:word;if(ctx.measureText(next).width>max&&line){lines.push(line);line=''}if(ctx.measureText(word).width>max){for(const char of word){if(ctx.measureText(line+char).width>max&&line){lines.push(line);line=''}line+=char}}else line=line?line+' '+word:word}lines.push(line)}return lines}
-function text(s,x,y,size=36,color='#272727',weight='normal',align='left'){ctx.fillStyle=color;ctx.font=`${weight} ${size}px Arial`;ctx.textAlign=align;ctx.fillText(s,x,y)}
+function text(s,x,y,size=36,color=palette.ink,family=fonts.body,align='left'){ctx.fillStyle=color;ctx.font=fontSpec(size,family);ctx.textAlign=align;ctx.fillText(s,x,y)}
 // Text sizes stay fixed: only whitespace is compressed to fit the single A5 page.
 function layout(compact){
  const headingGap=75-15*compact,dishGap=35-23*compact,sectionGap=50-30*compact;
  let y=540;const blocks=[];
  for(const g of groups){if(!data.sections[g.id].length)continue;
   blocks.push({kind:'heading',label:g.name.toUpperCase(),y});y+=headingGap;
-  for(const item of data.sections[g.id]){const titles=wrap(item.name.trim()||'Nome del piatto',1040,'normal 38px Arial');const descriptions=item.desc.trim()?wrap(item.desc.trim(),1220,'normal 28px Arial'):[];
-   blocks.push({kind:'dish',item,titles,descriptions,y});y+=titles.length*45+descriptions.length*34+dishGap;
+  for(const item of data.sections[g.id]){const titles=wrap(item.name.trim()||'Nome del piatto',1040,fontSpec(44));const descriptions=item.desc.trim()?wrap(item.desc.trim(),1220,fontSpec(34)):[];
+   blocks.push({kind:'dish',item,titles,descriptions,y});y+=titles.length*52+descriptions.length*40+dishGap;
   }y+=sectionGap;
  }
  return {blocks,end:y};
@@ -52,23 +57,25 @@ function chooseLayout(){let plan;for(let step=0;step<=10;step++){plan=layout(ste
 function dateValid(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T12:00:00');return Number.isFinite(d.getTime())&&iso(d)===s}
 function draw(){
  const plan=chooseLayout(),all=groups.flatMap(g=>data.sections[g.id]);
- ctx.fillStyle='#faf5e9';ctx.fillRect(0,0,W,H);
+ ctx.fillStyle=palette.paper;ctx.fillRect(0,0,W,H);
  if(logo.complete&&logo.naturalWidth)ctx.drawImage(logo,420,110,640,640*logo.naturalHeight/logo.naturalWidth);
- text('MENU DELLA SETTIMANA',W/2,370,49,'#272727','bold','center');
+ text('Menu della settimana',W/2,370,78,palette.wine,fonts.title,'center');
  const goodDates=dateValid(data.start)&&dateValid(data.end),fmt=s=>new Date(s+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
- text(goodDates?`${fmt(data.start)} — ${fmt(data.end)}`:'Seleziona le date della settimana',W/2,427,27,'#555','normal','center');
+ text(goodDates?`${fmt(data.start)} — ${fmt(data.end)}`:'Seleziona le date della settimana',W/2,437,34,palette.ink,fonts.body,'center');
  ctx.save();ctx.beginPath();ctx.rect(80,490,1320,1420);ctx.clip();
  for(const block of plan.blocks){
-  if(block.kind==='heading'){text(block.label,100,block.y,36,'#802330','bold');const tw=ctx.measureText(block.label).width;ctx.strokeStyle='#802330';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(125+tw,block.y-12);ctx.lineTo(1380,block.y-12);ctx.stroke();continue}
-  let y=block.y;for(const line of block.titles){text(line,100,y,38,block.item.name.trim()?'#272727':'#aaa298');y+=45}
-  if(block.item.price!==''&&Number.isFinite(Number(block.item.price)))text('€ '+Number(block.item.price).toLocaleString('it-IT',{maximumFractionDigits:2}),1380,block.y,38,'#272727','normal','right');
-  for(const line of block.descriptions){text(line,100,y,28,'#555');y+=34}
+  if(block.kind==='heading'){text(block.label,100,block.y,42,palette.wine,fonts.heading);const tw=ctx.measureText(block.label).width;ctx.strokeStyle=palette.wine;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(125+tw,block.y-12);ctx.lineTo(1380,block.y-12);ctx.stroke();continue}
+  let y=block.y;for(const line of block.titles){text(line,100,y,44,palette.ink);y+=52}
+  if(block.item.price!==''&&Number.isFinite(Number(block.item.price)))text('€ '+Number(block.item.price).toLocaleString('it-IT',{maximumFractionDigits:2}),1380,block.y,44,palette.wine,fonts.body,'right');
+  for(const line of block.descriptions){text(line,100,y,34,palette.ink);y+=40}
  }
- ctx.restore();ctx.strokeStyle='#802330';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(100,1950);ctx.lineTo(1380,1950);ctx.stroke();text('Per informazioni sugli allergeni chiedi al personale.',740,2005,25,'#555','normal','center');
+ ctx.restore();ctx.strokeStyle=palette.wine;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(100,1950);ctx.lineTo(1380,1950);ctx.stroke();text('Per informazioni sugli allergeni chiedi al personale.',740,2005,30,palette.ink,fonts.body,'center');
  const filled=all.every(x=>x.name.trim()&&x.price.trim()!==''&&Number.isFinite(Number(x.price))&&Number(x.price)>=0&&Number(x.price)<=999);
- valid=!!(all.length&&goodDates&&data.end>=data.start&&filled&&plan.fits&&logo.complete&&logo.naturalWidth);
+ valid=!!(fontsReady&&all.length&&goodDates&&data.end>=data.start&&filled&&plan.fits&&logo.complete&&logo.naturalWidth);
  let message='';
- if(!plan.fits)message='Troppi contenuti per una pagina A5. Elimina un piatto o abbrevia le descrizioni: il PDF è bloccato per evitare tagli e testi troppo piccoli.';
+ if(fontsFailed)message='Impossibile caricare i caratteri. Verifica che la cartella fonts sia presente accanto ad app.js e ricarica la pagina.';
+ else if(!fontsReady)message='Caricamento dei caratteri del menu…';
+ else if(!plan.fits)message='Troppi contenuti per una pagina A5. Elimina un piatto o abbrevia le descrizioni: il PDF è bloccato per evitare tagli e testi troppo piccoli.';
  else if(!all.length)message='Aggiungi almeno un piatto per creare il menu.';
  else if(!goodDates)message='Seleziona le date della settimana.';
  else if(data.end<data.start)message='La data finale deve essere successiva o uguale a quella iniziale.';
